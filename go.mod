@@ -9,6 +9,7 @@ require (
 	github.com/go-ctap/ctaphid v0.7.0
 	github.com/go-ctap/winhello v0.1.0
 	github.com/go-ole/go-ole v1.3.0
+	github.com/danieljoos/wincred v1.2.3
 	github.com/google/uuid v1.6.0
 	github.com/hugolgst/rich-go v0.0.0-20240715122152-74618cc1ace2
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1
