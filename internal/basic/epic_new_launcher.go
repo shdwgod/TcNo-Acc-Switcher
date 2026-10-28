@@ -127,6 +127,17 @@ func readEpicNewLauncherAuthFiles() (map[string][]byte, error) {
 		if err != nil {
 			return fail(fmt.Errorf("read new Epic launcher auth file %q: %w", name, err))
 		}
+		// Recheck after reading to avoid trusting a stale stat size if the file
+		// changed between Info and ReadFile.
+		if len(data) > epicNewLauncherMaxAuthFileSize {
+			clear(data)
+			return fail(fmt.Errorf("new Epic launcher auth file %q exceeds the size limit", name))
+		}
+		total = total - int(info.Size()) + len(data)
+		if total > epicNewLauncherMaxAuthTotalSize {
+			clear(data)
+			return fail(errors.New("new Epic launcher auth data exceeds the size limit"))
+		}
 		files[name] = data
 	}
 	if err := validateEpicNewLauncherAuthFiles(files); err != nil {
@@ -287,6 +298,9 @@ func restoreEpicNewLauncherSnapshot(srcRoot, expectedID string) error {
 	path := filepath.Join(srcRoot, epicNewLauncherSnapshotFile)
 	protected, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("this Epic profile has no new-launcher session yet; sign in to it in Epic Games Launcher, then save the session again")
+		}
 		return fmt.Errorf("read saved new Epic launcher snapshot: %w", err)
 	}
 	plain, err := winutil.DPAPIUnprotect(protected)
