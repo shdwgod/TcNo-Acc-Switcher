@@ -44,6 +44,8 @@
         "REG:HKCU\\Software\\Epic Games\\Unreal Engine\\Identifiers:AccountId": "UNIQUE_ID"
       },
       "AllFilesRequired": true,
+      "ExitBeforeInteract": true,
+      "ExitBeforeSave": true,
       "Extras": {
         "ClosingMethod": "TaskKill",
         "CachePaths": [
