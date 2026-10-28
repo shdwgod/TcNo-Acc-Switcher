@@ -2,9 +2,6 @@ name: Build Windows EXE
 
 on:
   push:
-    branches:
-      - master
-      - feature/epic-new-launcher
   pull_request:
     branches:
       - master
