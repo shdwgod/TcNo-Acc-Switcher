@@ -70,10 +70,7 @@ func isEpicNewLauncherFolder(folder string) bool {
 	if strings.EqualFold(filepath.Ext(candidate), ".exe") {
 		candidate = filepath.Dir(candidate)
 	}
-	if !strings.EqualFold(candidate, root) && !strings.HasPrefix(strings.ToLower(candidate), strings.ToLower(root+string(os.PathSeparator))) {
-		return false
-	}
-	return true
+	return strings.EqualFold(candidate, root)
 }
 
 func epicNewLauncherAuthDir() (string, error) {
