@@ -337,14 +337,18 @@ func restoreEpicNewLauncherSnapshot(srcRoot, expectedID string) error {
 	return installEpicNewLauncherSession(credential, snapshot.AuthFiles)
 }
 
-// installEpicNewLauncherSession stages all auth files before replacing the live
-// folder. If saving the credential fails, it rolls the old folder back.
+// installEpicNewLauncherSession stages replacement files first, then backs up
+// existing regular auth files. Unrecognized directories and non-regular entries
+// are left untouched rather than being recursively deleted.
 func installEpicNewLauncherSession(credential winutil.Credential, files map[string][]byte) error {
 	if !winutil.CredentialTargetMatches(epicNewLauncherCredentialTarget, credential.TargetName) {
 		return errors.New("refusing to write an unexpected Epic launcher credential target")
 	}
 	if len(credential.Blob) == 0 || len(credential.Blob) > 2560 {
 		return errors.New("saved Epic launcher credential has an invalid size")
+	}
+	if credential.Persist < 1 || credential.Persist > 3 {
+		return errors.New("saved Epic launcher credential has invalid persistence metadata")
 	}
 	if err := validateEpicNewLauncherAuthFiles(files); err != nil {
 		return err
@@ -357,67 +361,98 @@ func installEpicNewLauncherSession(credential winutil.Credential, files map[stri
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("create new Epic launcher auth parent: %w", err)
 	}
-	stageDir, err := os.MkdirTemp(parent, ".tcno-epic-auth-")
+	stageDir, err := os.MkdirTemp(parent, ".tcno-epic-stage-")
 	if err != nil {
 		return fmt.Errorf("stage new Epic launcher auth: %w", err)
 	}
 	defer os.RemoveAll(stageDir)
-
 	for name, data := range files {
 		if !validEpicNewLauncherAuthFileName(name) {
 			return errors.New("saved Epic launcher auth data contains an invalid filename")
 		}
-		dst := filepath.Join(stageDir, name)
-		if err := os.WriteFile(dst, data, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(stageDir, name), data, 0o600); err != nil {
 			return fmt.Errorf("stage new Epic launcher auth file: %w", err)
 		}
 	}
 
-	var backupDir string
-	if info, err := os.Lstat(authDir); err == nil {
+	info, err := os.Lstat(authDir)
+	switch {
+	case err == nil:
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return errors.New("new Epic launcher auth path is not a directory")
 		}
-		placeholder, err := os.MkdirTemp(parent, ".tcno-epic-backup-")
-		if err != nil {
-			return fmt.Errorf("prepare auth rollback: %w", err)
+	case os.IsNotExist(err):
+		if err := os.Mkdir(authDir, 0o700); err != nil {
+			return fmt.Errorf("create new Epic launcher auth folder: %w", err)
 		}
-		backupDir = placeholder
-		if err := os.Remove(backupDir); err != nil {
-			return fmt.Errorf("prepare auth rollback: %w", err)
-		}
-		if err := os.Rename(authDir, backupDir); err != nil {
-			return fmt.Errorf("backup current Epic launcher auth: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
+	default:
 		return fmt.Errorf("inspect current Epic launcher auth: %w", err)
 	}
 
-	if err := os.Rename(stageDir, authDir); err != nil {
-		if backupDir != "" {
-			if rollbackErr := os.Rename(backupDir, authDir); rollbackErr != nil {
-				return fmt.Errorf("install new Epic launcher auth: %w (rollback also failed: %v)", err, rollbackErr)
+	backupDir, err := os.MkdirTemp(parent, ".tcno-epic-backup-")
+	if err != nil {
+		return fmt.Errorf("prepare auth rollback: %w", err)
+	}
+	defer os.RemoveAll(backupDir)
+
+	var backedUp, installed []string
+	rollback := func(cause error) error {
+		var rollbackErrs []string
+		for _, name := range installed {
+			if err := os.Remove(filepath.Join(authDir, name)); err != nil && !os.IsNotExist(err) {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("remove %s: %v", name, err))
 			}
 		}
-		return fmt.Errorf("install new Epic launcher auth: %w", err)
+		for i := len(backedUp) - 1; i >= 0; i-- {
+			name := backedUp[i]
+			if err := os.Rename(filepath.Join(backupDir, name), filepath.Join(authDir, name)); err != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", name, err))
+			}
+		}
+		if len(rollbackErrs) > 0 {
+			return fmt.Errorf("%w (auth rollback errors: %s)", cause, strings.Join(rollbackErrs, "; "))
+		}
+		return cause
+	}
+
+	current, err := os.ReadDir(authDir)
+	if err != nil {
+		return fmt.Errorf("read current Epic launcher auth: %w", err)
+	}
+	for _, entry := range current {
+		fileInfo, err := entry.Info()
+		if err != nil {
+			return rollback(fmt.Errorf("inspect current Epic auth entry: %w", err))
+		}
+		if !fileInfo.Mode().IsRegular() {
+			continue
+		}
+		name := entry.Name()
+		if !validEpicNewLauncherAuthFileName(name) {
+			return rollback(errors.New("unexpected filename in new Epic launcher auth folder"))
+		}
+		if err := os.Rename(filepath.Join(authDir, name), filepath.Join(backupDir, name)); err != nil {
+			return rollback(fmt.Errorf("backup current Epic launcher auth file: %w", err))
+		}
+		backedUp = append(backedUp, name)
+	}
+	stageEntries, err := os.ReadDir(stageDir)
+	if err != nil {
+		return rollback(fmt.Errorf("read staged Epic launcher auth: %w", err))
+	}
+	for _, entry := range stageEntries {
+		name := entry.Name()
+		if err := os.Rename(filepath.Join(stageDir, name), filepath.Join(authDir, name)); err != nil {
+			return rollback(fmt.Errorf("install new Epic launcher auth file: %w", err))
+		}
+		installed = append(installed, name)
 	}
 
 	if err := winutil.WriteCredential(credential); err != nil {
-		removeErr := os.RemoveAll(authDir)
-		var rollbackErr error
-		if backupDir != "" {
-			rollbackErr = os.Rename(backupDir, authDir)
-		}
-		if removeErr != nil || rollbackErr != nil {
-			return fmt.Errorf("write new Epic launcher credential: %w (rollback cleanup failed: remove=%v, restore=%v)", err, removeErr, rollbackErr)
-		}
-		return fmt.Errorf("write new Epic launcher credential: %w", err)
+		return rollback(fmt.Errorf("write new Epic launcher credential: %w", err))
 	}
-
-	if backupDir != "" {
-		if err := os.RemoveAll(backupDir); err != nil {
-			return fmt.Errorf("Epic launcher session restored, but old auth files could not be removed: %w", err)
-		}
+	if err := os.RemoveAll(backupDir); err != nil {
+		return fmt.Errorf("Epic launcher session restored, but old auth files could not be removed: %w", err)
 	}
 	return nil
 }
@@ -427,45 +462,56 @@ func clearEpicNewLauncherSession() error {
 	if err != nil {
 		return err
 	}
+	entries, err := os.ReadDir(authDir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read new Epic launcher auth folder: %w", err)
+	}
 
-	// Move the complete auth folder aside before deleting the credential. If
-	// Credential Manager reports a failure, put the files back instead of
-	// leaving a half-cleared launcher session.
-	var backupDir string
-	if info, err := os.Lstat(authDir); err == nil {
-		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("new Epic launcher auth path is not a directory")
+	parent := filepath.Dir(authDir)
+	backupDir, err := os.MkdirTemp(parent, ".tcno-epic-clear-")
+	if err != nil {
+		return fmt.Errorf("prepare Epic launcher auth backup: %w", err)
+	}
+	defer os.RemoveAll(backupDir)
+
+	var moved []string
+	rollback := func(cause error) error {
+		var rollbackErrs []string
+		for i := len(moved) - 1; i >= 0; i-- {
+			name := moved[i]
+			if err := os.Rename(filepath.Join(backupDir, name), filepath.Join(authDir, name)); err != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", name, err))
+			}
 		}
-		placeholder, err := os.MkdirTemp(filepath.Dir(authDir), ".tcno-epic-clear-")
+		if len(rollbackErrs) > 0 {
+			return fmt.Errorf("%w (auth rollback errors: %s)", cause, strings.Join(rollbackErrs, "; "))
+		}
+		return cause
+	}
+
+	for _, entry := range entries {
+		info, err := entry.Info()
 		if err != nil {
-			return fmt.Errorf("prepare Epic launcher auth backup: %w", err)
+			return rollback(fmt.Errorf("inspect new Epic launcher auth entry: %w", err))
 		}
-		backupDir = placeholder
-		if err := os.Remove(backupDir); err != nil {
-			return fmt.Errorf("prepare Epic launcher auth backup: %w", err)
+		if !info.Mode().IsRegular() {
+			continue
 		}
-		if err := os.Rename(authDir, backupDir); err != nil {
-			return fmt.Errorf("move current Epic launcher auth aside: %w", err)
+		name := entry.Name()
+		if !validEpicNewLauncherAuthFileName(name) {
+			return rollback(errors.New("unexpected filename in new Epic launcher auth folder"))
 		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect current Epic launcher auth: %w", err)
+		if err := os.Rename(filepath.Join(authDir, name), filepath.Join(backupDir, name)); err != nil {
+			return rollback(fmt.Errorf("move current Epic launcher auth file aside: %w", err))
+		}
+		moved = append(moved, name)
 	}
 
 	if err := winutil.DeleteCredential(epicNewLauncherCredentialTarget); err != nil && !errors.Is(err, winutil.ErrCredentialNotFound) {
-		var rollbackErr error
-		if backupDir != "" {
-			rollbackErr = os.Rename(backupDir, authDir)
-		}
-		if rollbackErr != nil {
-			return fmt.Errorf("remove new Epic launcher credential: %w (auth rollback failed: %v)", err, rollbackErr)
-		}
-		return fmt.Errorf("remove new Epic launcher credential: %w", err)
+		return rollback(fmt.Errorf("remove new Epic launcher credential: %w", err))
 	}
-
-	if backupDir != "" {
-		if err := os.RemoveAll(backupDir); err != nil {
-			return fmt.Errorf("Epic launcher session was cleared, but old auth files could not be removed: %w", err)
-		}
+	if err := os.RemoveAll(backupDir); err != nil {
+		return fmt.Errorf("Epic launcher session was cleared, but old auth files could not be removed: %w", err)
 	}
 	return nil
 }
