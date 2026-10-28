@@ -71,8 +71,8 @@ func TestIsEpicNewLauncherFolder(t *testing.T) {
 	if !isEpicNewLauncherFolder(filepath.Join(root, "EpicGamesLauncher.exe")) {
 		t.Fatal("new launcher executable path was not recognized")
 	}
-	if !isEpicNewLauncherFolder(filepath.Join(root, "nested")) {
-		t.Fatal("new launcher subfolder was not recognized")
+	if isEpicNewLauncherFolder(filepath.Join(root, "Portal", "Binaries", "Win32")) {
+		t.Fatal("nested legacy launcher path was incorrectly recognized as the new launcher")
 	}
 	if isEpicNewLauncherFolder(filepath.Join(local, "EpicGamesLauncher")) {
 		t.Fatal("legacy launcher folder was incorrectly recognized as the new launcher")
