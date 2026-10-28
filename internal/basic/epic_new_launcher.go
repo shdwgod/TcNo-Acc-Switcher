@@ -98,11 +98,15 @@ func readEpicNewLauncherAuthFiles() (map[string][]byte, error) {
 	}
 
 	files := make(map[string][]byte, len(entries))
+	fail := func(err error) (map[string][]byte, error) {
+		wipeEpicNewLauncherAuthFiles(files)
+		return nil, err
+	}
 	total := 0
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
-			return nil, fmt.Errorf("inspect new Epic launcher auth file %q: %w", entry.Name(), err)
+			return fail(fmt.Errorf("inspect new Epic launcher auth file %q: %w", entry.Name(), err))
 		}
 		// Never follow symlinks or copy directories from the auth folder.
 		if !info.Mode().IsRegular() {
@@ -110,25 +114,31 @@ func readEpicNewLauncherAuthFiles() (map[string][]byte, error) {
 		}
 		name := entry.Name()
 		if !validEpicNewLauncherAuthFileName(name) {
-			return nil, fmt.Errorf("unexpected filename in new Epic launcher auth folder")
+			return fail(errors.New("unexpected filename in new Epic launcher auth folder"))
 		}
 		if info.Size() < 0 || info.Size() > epicNewLauncherMaxAuthFileSize {
-			return nil, fmt.Errorf("new Epic launcher auth file %q exceeds the size limit", name)
+			return fail(fmt.Errorf("new Epic launcher auth file %q exceeds the size limit", name))
 		}
 		total += int(info.Size())
 		if total > epicNewLauncherMaxAuthTotalSize {
-			return nil, errors.New("new Epic launcher auth data exceeds the size limit")
+			return fail(errors.New("new Epic launcher auth data exceeds the size limit"))
 		}
 		data, err := os.ReadFile(filepath.Join(authDir, name))
 		if err != nil {
-			return nil, fmt.Errorf("read new Epic launcher auth file %q: %w", name, err)
+			return fail(fmt.Errorf("read new Epic launcher auth file %q: %w", name, err))
 		}
 		files[name] = data
 	}
 	if err := validateEpicNewLauncherAuthFiles(files); err != nil {
-		return nil, err
+		return fail(err)
 	}
 	return files, nil
+}
+
+func wipeEpicNewLauncherAuthFiles(files map[string][]byte) {
+	for _, data := range files {
+		clear(data)
+	}
 }
 
 func validEpicNewLauncherAuthFileName(name string) bool {
@@ -202,6 +212,7 @@ func readCurrentEpicNewLauncherSession() (*epicNewLauncherSnapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read new Epic launcher credential: %w", err)
 	}
+	defer clear(credential.Blob)
 	if !winutil.CredentialTargetMatches(epicNewLauncherCredentialTarget, credential.TargetName) {
 		return nil, errors.New("the stored Epic launcher credential has an unexpected target")
 	}
@@ -215,6 +226,7 @@ func readCurrentEpicNewLauncherSession() (*epicNewLauncherSnapshot, error) {
 	}
 	id, err := epicNewLauncherAccountID(files)
 	if err != nil {
+		wipeEpicNewLauncherAuthFiles(files)
 		return nil, err
 	}
 
