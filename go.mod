@@ -6,10 +6,10 @@ require (
 	github.com/Jleagle/steam-go v0.0.0-20260702210647-a0025544c8f4
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/antchfx/htmlquery v1.3.6
+	github.com/danieljoos/wincred v1.2.3
 	github.com/go-ctap/ctaphid v0.7.0
 	github.com/go-ctap/winhello v0.1.0
 	github.com/go-ole/go-ole v1.3.0
-	github.com/danieljoos/wincred v1.2.3
 	github.com/google/uuid v1.6.0
 	github.com/hugolgst/rich-go v0.0.0-20240715122152-74618cc1ace2
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1
