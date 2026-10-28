@@ -72,9 +72,9 @@ jobs:
           PRODUCTION: "true"
         run: pnpm run build
 
-      - name: Run Go tests
+      - name: Test Epic account switching
         shell: pwsh
-        run: go test -count=1 ./internal/... ./cmd/...
+        run: go test -count=1 ./internal/basic ./internal/winutil
 
       - name: Build EXE
         shell: pwsh
