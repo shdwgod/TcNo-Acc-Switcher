@@ -795,8 +795,13 @@ func SwapTo(deps FlowDeps, platformKey, uniqueID string, extraLaunchArgs []strin
 		logFlow().Debug("swap short-circuit: already on requested account", "platform", platformKey, "uniqueID", uniqueID)
 		return nil
 	}
+	initialUniqueIDReadFailed := curErr != nil
 	if curErr != nil {
-		logFlow().Warn("swap: current unique ID unreadable; will proceed without saving previous session", "platform", platformKey, "err", curErr)
+		if isEpicNewLauncherFlow(fc) {
+			logFlow().Warn("swap: new Epic launcher unique ID unreadable; will retry after closing launcher", "platform", platformKey, "err", curErr)
+		} else {
+			logFlow().Warn("swap: current unique ID unreadable; will proceed without saving previous session", "platform", platformKey, "err", curErr)
+		}
 	}
 
 	if err := killPlatformExes(deps, fc); err != nil {
@@ -807,9 +812,17 @@ func SwapTo(deps FlowDeps, platformKey, uniqueID string, extraLaunchArgs []strin
 	if err != nil {
 		return err
 	}
+	if isEpicNewLauncherFlow(fc) && initialUniqueIDReadFailed {
+		cur, curErr = ReadUniqueID(platformKey, d, folder)
+		if curErr != nil {
+			logFlow().Warn("swap: new Epic launcher unique ID still unreadable after closing launcher", "platform", platformKey, "err", curErr)
+		}
+	}
 	if curErr == nil && strings.TrimSpace(cur) != "" {
 		if prevName, ok := ids[cur]; ok {
-			if !strings.EqualFold(strings.TrimSpace(cur), strings.TrimSpace(uniqueID)) {
+			needsFreshSnapshot := !strings.EqualFold(strings.TrimSpace(cur), strings.TrimSpace(uniqueID)) ||
+				(isEpicNewLauncherFlow(fc) && initialUniqueIDReadFailed)
+			if needsFreshSnapshot {
 				platform.EmitActionBarStatusI18n("Status_ActionBar_SavingSession")
 				if err := saveCurrentAfterKill(deps, prevName, fc); err != nil {
 					return wrapNeedsAdminIfPermission(err)
