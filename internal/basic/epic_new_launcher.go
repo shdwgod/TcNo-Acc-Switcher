@@ -65,6 +65,11 @@ func isEpicNewLauncherFolder(folder string) bool {
 
 	root := filepath.Clean(filepath.Join(localAppData, "Epic Games", "Launcher"))
 	candidate := filepath.Clean(folder)
+	// Some platform path providers hand back the executable rather than its
+	// containing directory. Normalize both forms before comparing.
+	if strings.EqualFold(filepath.Ext(candidate), ".exe") {
+		candidate = filepath.Dir(candidate)
+	}
 	if !strings.EqualFold(candidate, root) && !strings.HasPrefix(strings.ToLower(candidate), strings.ToLower(root+string(os.PathSeparator))) {
 		return false
 	}
