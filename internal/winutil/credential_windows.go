@@ -85,12 +85,13 @@ func DeleteCredential(target string) error {
 			}
 			return fmt.Errorf("read credential before delete: %w", err)
 		}
+		deleteErr := item.Delete()
 		clear(item.CredentialBlob)
-		if err := item.Delete(); err != nil {
-			if errors.Is(err, wincred.ErrElementNotFound) {
+		if deleteErr != nil {
+			if errors.Is(deleteErr, wincred.ErrElementNotFound) {
 				continue
 			}
-			return fmt.Errorf("delete generic credential: %w", err)
+			return fmt.Errorf("delete generic credential: %w", deleteErr)
 		}
 		found = true
 	}
