@@ -8,7 +8,7 @@ import (
 func TestCredentialTargetCandidates(t *testing.T) {
 	target := "credentials.com.epicgames.eglv2.prod"
 	want := []string{"LegacyGeneric:target=" + target, target}
-	if got := CredentialTargetCandidates("LegacyGeneric:target:" + target); !reflect.DeepEqual(got, want) {
+	if got := CredentialTargetCandidates("LegacyGeneric:target=" + target); !reflect.DeepEqual(got, want) {
 		t.Fatalf("CredentialTargetCandidates(prefixed) = %#v, want %#v", got, want)
 	}
 	want = []string{target, "LegacyGeneric:target=" + target}
