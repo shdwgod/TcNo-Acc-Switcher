@@ -29,13 +29,15 @@ func ReadCredential(target string) (Credential, error) {
 			return Credential{}, fmt.Errorf("read generic credential: %w", err)
 		}
 
+		blob := append([]byte(nil), item.CredentialBlob...)
+		clear(item.CredentialBlob)
 		return Credential{
 			TargetName:  item.TargetName,
 			UserName:    item.UserName,
 			TargetAlias: item.TargetAlias,
 			Comment:     item.Comment,
 			Persist:     uint32(item.Persist),
-			Blob:        append([]byte(nil), item.CredentialBlob...),
+			Blob:        blob,
 		}, nil
 	}
 	return Credential{}, ErrCredentialNotFound
@@ -64,6 +66,7 @@ func WriteCredential(credential Credential) error {
 	item.Comment = credential.Comment
 	item.Persist = wincred.CredentialPersistence(credential.Persist)
 	item.CredentialBlob = append([]byte(nil), credential.Blob...)
+	defer clear(item.CredentialBlob)
 	if err := item.Write(); err != nil {
 		return fmt.Errorf("write generic credential: %w", err)
 	}
@@ -82,6 +85,7 @@ func DeleteCredential(target string) error {
 			}
 			return fmt.Errorf("read credential before delete: %w", err)
 		}
+		clear(item.CredentialBlob)
 		if err := item.Delete(); err != nil {
 			if errors.Is(err, wincred.ErrElementNotFound) {
 				continue
