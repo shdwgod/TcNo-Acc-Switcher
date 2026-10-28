@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode"
 
 	"TcNo-Acc-Switcher/internal/fsutil"
@@ -446,4 +445,3 @@ func wipeEpicNewLauncherSnapshot(snapshot *epicNewLauncherSnapshot) {
 	}
 }
 
-var _ = time.Second
