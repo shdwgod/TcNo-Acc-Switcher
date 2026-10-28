@@ -393,7 +393,12 @@ func installEpicNewLauncherSession(credential winutil.Credential, files map[stri
 	if err != nil {
 		return fmt.Errorf("prepare auth rollback: %w", err)
 	}
-	defer os.RemoveAll(backupDir)
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			_ = os.RemoveAll(backupDir)
+		}
+	}()
 
 	var backedUp, installed []string
 	rollback := func(cause error) error {
@@ -410,7 +415,8 @@ func installEpicNewLauncherSession(credential winutil.Credential, files map[stri
 			}
 		}
 		if len(rollbackErrs) > 0 {
-			return fmt.Errorf("%w (auth rollback errors: %s)", cause, strings.Join(rollbackErrs, "; "))
+			keepBackup = true
+			return fmt.Errorf("%w (auth rollback errors: %s; backup kept at %s)", cause, strings.Join(rollbackErrs, "; "), backupDir)
 		}
 		return cause
 	}
@@ -452,7 +458,8 @@ func installEpicNewLauncherSession(credential winutil.Credential, files map[stri
 		return rollback(fmt.Errorf("write new Epic launcher credential: %w", err))
 	}
 	if err := os.RemoveAll(backupDir); err != nil {
-		return fmt.Errorf("Epic launcher session restored, but old auth files could not be removed: %w", err)
+		keepBackup = true
+		return fmt.Errorf("Epic launcher session restored, but old auth files could not be removed from %s: %w", backupDir, err)
 	}
 	return nil
 }
@@ -468,11 +475,19 @@ func clearEpicNewLauncherSession() error {
 	}
 
 	parent := filepath.Dir(authDir)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return fmt.Errorf("create Epic launcher auth parent: %w", err)
+	}
 	backupDir, err := os.MkdirTemp(parent, ".tcno-epic-clear-")
 	if err != nil {
 		return fmt.Errorf("prepare Epic launcher auth backup: %w", err)
 	}
-	defer os.RemoveAll(backupDir)
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			_ = os.RemoveAll(backupDir)
+		}
+	}()
 
 	var moved []string
 	rollback := func(cause error) error {
@@ -484,7 +499,8 @@ func clearEpicNewLauncherSession() error {
 			}
 		}
 		if len(rollbackErrs) > 0 {
-			return fmt.Errorf("%w (auth rollback errors: %s)", cause, strings.Join(rollbackErrs, "; "))
+			keepBackup = true
+			return fmt.Errorf("%w (auth rollback errors: %s; backup kept at %s)", cause, strings.Join(rollbackErrs, "; "), backupDir)
 		}
 		return cause
 	}
@@ -511,7 +527,8 @@ func clearEpicNewLauncherSession() error {
 		return rollback(fmt.Errorf("remove new Epic launcher credential: %w", err))
 	}
 	if err := os.RemoveAll(backupDir); err != nil {
-		return fmt.Errorf("Epic launcher session was cleared, but old auth files could not be removed: %w", err)
+		keepBackup = true
+		return fmt.Errorf("Epic launcher session was cleared, but old auth files could not be removed from %s: %w", backupDir, err)
 	}
 	return nil
 }
