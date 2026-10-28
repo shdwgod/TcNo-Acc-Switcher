@@ -5,7 +5,6 @@ package winutil
 import (
 	"errors"
 	"fmt"
-	"math"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -113,7 +112,7 @@ func DPAPIUnprotect(data []byte) ([]byte, error) {
 }
 
 func transformDPAPI(data []byte, protect bool) ([]byte, error) {
-	if uint64(len(data)) > uint64(math.MaxUint32) {
+	if uint64(len(data)) > uint64(^uint32(0)) {
 		return nil, errors.New("data is too large for DPAPI")
 	}
 
